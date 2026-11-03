@@ -28,6 +28,7 @@ from .routers import (
     portfolio,
     billing,
     reports,
+    network,
 )
 
 app = FastAPI(
@@ -70,6 +71,7 @@ app.include_router(referrals.router)
 app.include_router(portfolio.router)
 app.include_router(billing.router)
 app.include_router(reports.router)
+app.include_router(network.router)
 
 
 @app.on_event("startup")

@@ -74,3 +74,11 @@ in it. The existing `eas.json` uses the EAS `preview` environment and internal
 distribution. EAS Build requires an authenticated Expo account and a configured
 project. Use isolated preview data; do not point this build at production data.
 
+Google sign-in requires `GOOGLE_CLIENT_ID` on the backend. Set it to the same
+Web OAuth client ID configured as `webClientId` in the mobile app, both locally
+in `backend/.env` and in the API host's environment settings.
+
+Password recovery requires `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
+`SMTP_PASSWORD`, and `SMTP_FROM`. Configure these values in `backend/.env` and
+the API host's environment settings to deliver expiring reset codes.
+

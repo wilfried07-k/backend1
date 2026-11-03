@@ -3,6 +3,8 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from pydantic import BaseModel, Field as PydanticField
+from pydantic import EmailStr
+from sqlalchemy.exc import IntegrityError
 from ..database import get_session
 from ..auth import require_admin
 from ..models import ModerationReport, BannedAccount, AccountType, BillingPayment, BillingSubscription, Company, JobOffer, CompanyKycReview, MarketingCampaign, User
@@ -306,3 +308,100 @@ def campaign_summary(session: Session = Depends(get_session)):
         "campaigns_total": session.exec(select(func.count(MarketingCampaign.id))).one(),
         "campaigns_prepared": session.exec(select(func.count(MarketingCampaign.id)).where(MarketingCampaign.status == "Prête à envoyer")).one(),
     }
+
+
+class AdminUserResponse(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    account_type: str
+    created_at: datetime
+
+
+class AdminUserCreate(BaseModel):
+    full_name: str = PydanticField(min_length=2, max_length=255)
+    email: EmailStr
+    password: str = PydanticField(min_length=8)
+    account_type: Literal["candidate", "recruiter"]
+
+
+class AdminUserUpdate(BaseModel):
+    full_name: Optional[str] = PydanticField(default=None, min_length=2, max_length=255)
+    account_type: Optional[Literal["candidate", "recruiter"]] = None
+
+
+@router.get("/users", response_model=list[AdminUserResponse])
+def list_admin_users(search: str = "", account_type: Optional[str] = None, session: Session = Depends(get_session)):
+    query = select(User).order_by(User.created_at.desc())
+    if account_type in {AccountType.candidate.value, AccountType.recruiter.value, AccountType.admin.value}:
+        query = query.where(User.account_type == AccountType(account_type))
+    if search.strip():
+        pattern = f"%{search.strip()}%"
+        query = query.where((User.full_name.ilike(pattern)) | (User.email.ilike(pattern)))
+    return session.exec(query).all()
+
+
+@router.post("/users", response_model=AdminUserResponse, status_code=201)
+def create_admin_user(payload: AdminUserCreate, session: Session = Depends(get_session)):
+    email = str(payload.email).lower()
+    if session.exec(select(User).where(User.email == email)).first():
+        raise HTTPException(status_code=409, detail="Un compte existe déjà avec cette adresse email")
+    from ..auth import hash_password
+    user = User(
+        full_name=payload.full_name.strip(),
+        email=email,
+        hashed_password=hash_password(payload.password),
+        account_type=AccountType(payload.account_type),
+    )
+    session.add(user)
+    session.flush()
+    if user.account_type == AccountType.candidate:
+        from ..models import CandidateProfile
+        session.add(CandidateProfile(user_id=user.id))
+    session.commit()
+    session.refresh(user)
+    return user
+
+
+@router.patch("/users/{user_id}", response_model=AdminUserResponse)
+def update_admin_user(user_id: int, payload: AdminUserUpdate, session: Session = Depends(get_session), admin_user: User = Depends(require_admin)):
+    from ..models import CandidateProfile
+
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if user.account_type == AccountType.admin:
+        raise HTTPException(status_code=403, detail="La modification des comptes administrateur est protégée")
+    if payload.full_name is not None:
+        user.full_name = payload.full_name.strip()
+    if payload.account_type is not None and payload.account_type != user.account_type.value:
+        new_type = AccountType(payload.account_type)
+        if new_type == AccountType.candidate and not session.exec(select(CandidateProfile).where(CandidateProfile.user_id == user.id)).first():
+            session.add(CandidateProfile(user_id=user.id))
+        user.account_type = new_type
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user
+
+
+@router.delete("/users/{user_id}")
+def delete_admin_user(user_id: int, session: Session = Depends(get_session), admin_user: User = Depends(require_admin)):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if user.id == admin_user.id or user.account_type == AccountType.admin:
+        raise HTTPException(status_code=403, detail="La suppression de comptes administrateur est interdite")
+    try:
+        session.delete(user)
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Ce compte possède des données liées; suspendez-le plutôt que de supprimer son historique")
+    return {"deleted": True}
+
+
+@router.get("/jobs/open")
+def list_open_admin_jobs(session: Session = Depends(get_session)):
+    jobs = session.exec(select(JobOffer).where(JobOffer.status == "Ouvert").order_by(JobOffer.created_at.desc())).all()
+    return jobs

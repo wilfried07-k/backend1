@@ -61,6 +61,17 @@ class User(SQLModel, table=True):
     )
 
 
+class PasswordResetCode(SQLModel, table=True):
+    __tablename__ = "password_reset_codes"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    code_hash: str = Field(max_length=64, index=True)
+    expires_at: datetime
+    attempts: int = Field(default=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 # ============================================================
 # CANDIDATE PROFILE
 # ============================================================
@@ -748,8 +759,14 @@ class MarketingCampaign(SQLModel, table=True):
     content: str = Field(max_length=4000)
     audience_segment: str = Field(max_length=30)
     audience_size: int = Field(default=0)
-    status: str = Field(default="Brouillon", max_length=40)
+class CandidateConnection(SQLModel, table=True):
+    __tablename__ = "candidate_connections"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    requester_user_id: int = Field(foreign_key="users.id", index=True)
+    connected_user_id: int = Field(foreign_key="users.id", index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    status: str = Field(default="Brouillon", max_length=40)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 class CompanyKycReview(SQLModel, table=True):
     """Latest administrative KYC review state for a company."""

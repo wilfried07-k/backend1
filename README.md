@@ -80,5 +80,7 @@ in `backend/.env` and in the API host's environment settings.
 
 Password recovery requires `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
 `SMTP_PASSWORD`, and `SMTP_FROM`. Configure these values in `backend/.env` and
-the API host's environment settings to deliver expiring reset codes.
+the API host's environment settings to deliver expiring reset codes. The Render
+blueprint declares the SMTP values as unsynced variables; enter them in the
+Render dashboard using credentials from your mail provider. Do not commit them.
 

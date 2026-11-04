@@ -78,8 +78,8 @@ Google sign-in requires `GOOGLE_CLIENT_ID` on the backend. Set it to the same
 Web OAuth client ID configured as `webClientId` in the mobile app, both locally
 in `backend/.env` and in the API host's environment settings.
 
-Password recovery uses the Resend API and requires `RESEND_API_KEY` and
-`RESEND_FROM`. Verify the sender domain in Resend, then configure these values
-locally in `backend/.env` and in the Render environment settings. Keep the API
-key secret and never commit it.
+Password recovery sends short-lived codes over SMTP. Configure `SMTP_HOST`,
+`SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, and `SMTP_FROM` locally in
+`backend/.env` and in the Render environment settings. Use an app password when
+your email provider requires one, and never commit credentials.
 

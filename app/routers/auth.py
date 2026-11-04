@@ -1,13 +1,13 @@
 import hashlib
 import hmac
-import json
 import logging
 import os
 import secrets
+import smtplib
+import ssl
 from datetime import datetime, timedelta
+from email.message import EmailMessage
 from typing import Optional
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from pydantic import BaseModel, EmailStr, Field
@@ -65,34 +65,35 @@ class PasswordResetRequest(BaseModel):
 
 
 def send_password_reset_code(email: str, code: str):
-    api_key = os.getenv("RESEND_API_KEY", "").strip()
-    sender = os.getenv("RESEND_FROM", "").strip()
-    if not api_key or not sender:
-        raise RuntimeError("Resend email configuration is missing")
+    host = os.getenv("SMTP_HOST", "").strip()
+    sender = os.getenv("SMTP_FROM", "").strip()
+    username = os.getenv("SMTP_USERNAME", "").strip()
+    password = os.getenv("SMTP_PASSWORD", "")
+    if not host or not sender or not username or not password:
+        raise RuntimeError("SMTP email configuration is missing")
 
-    body = json.dumps({
-        "from": sender,
-        "to": [email],
-        "subject": "Réinitialisation de votre mot de passe EmploiCamer",
-        "text": f"Votre code de réinitialisation est {code}. Il expire dans 15 minutes.",
-    }).encode("utf-8")
-    request = Request(
-        "https://api.resend.com/emails",
-        data=body,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urlopen(request, timeout=10) as response:
-            if response.status >= 300:
-                raise RuntimeError("Resend email request failed")
-    except HTTPError as error:
-        raise RuntimeError("Resend email request failed") from error
+    message = EmailMessage()
+    message["Subject"] = "Réinitialisation de votre mot de passe EmploiCamer"
+    message["From"] = sender
+    message["To"] = email
+    message.set_content(f"Votre code de réinitialisation est {code}. Il expire dans 15 minutes.")
+
+    port = int(os.getenv("SMTP_PORT", "587"))
+    tls_context = ssl.create_default_context()
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=10, context=tls_context) as smtp:
+            smtp.login(username, password)
+            smtp.send_message(message)
+    else:
+        with smtplib.SMTP(host, port, timeout=10) as smtp:
+            smtp.starttls(context=tls_context)
+            smtp.login(username, password)
+            smtp.send_message(message)
 
 
 @router.post("/password/forgot")
 def request_password_reset(payload: PasswordResetCodeRequest, session: Session = Depends(get_session)):
-    if not os.getenv("RESEND_API_KEY", "").strip() or not os.getenv("RESEND_FROM", "").strip():
+    if not all(os.getenv(key, "").strip() for key in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM")):
         raise HTTPException(status_code=503, detail="La récupération par email n’est pas configurée sur le serveur")
     user = session.exec(select(User).where(User.email == payload.email.lower())).first()
     if user:

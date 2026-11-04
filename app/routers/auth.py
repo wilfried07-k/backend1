@@ -20,6 +20,7 @@ from ..auth import hash_password, verify_password, create_access_token, get_curr
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
+DEFAULT_GOOGLE_CLIENT_ID = "45847298670-fakktka7o2vpe16uejg0g5onhebmpkas.apps.googleusercontent.com"
 
 
 class RegisterRequest(BaseModel):
@@ -207,9 +208,7 @@ def login(payload: LoginRequest, session: Session = Depends(get_session)):
 
 @router.post("/google", response_model=TokenResponse)
 def login_with_google(payload: GoogleLoginRequest, session: Session = Depends(get_session)):
-    google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
-    if not google_client_id:
-        raise HTTPException(status_code=503, detail="La connexion Google n’est pas configurée sur le serveur")
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip() or DEFAULT_GOOGLE_CLIENT_ID
     if payload.account_type == AccountType.admin:
         raise HTTPException(status_code=403, detail="La connexion Google est réservée aux candidats et recruteurs")
 

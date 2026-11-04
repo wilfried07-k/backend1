@@ -35,12 +35,13 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
-    account_type: AccountType
+    account_type: Optional[AccountType] = None
 
 
 class GoogleLoginRequest(BaseModel):
     id_token: str = Field(min_length=1)
-    account_type: AccountType
+    account_type: Optional[AccountType] = None
+    create_account: bool = False
 
 
 class TokenResponse(BaseModel):
@@ -191,16 +192,10 @@ def register(payload: RegisterRequest, session: Session = Depends(get_session)):
 
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, session: Session = Depends(get_session)):
-    """Correspond au bouton 'Se connecter' de ConnexionScreen (avec le sÃ©lecteur candidat/recruteur)."""
+    """Détermine le rôle de connexion depuis le compte correspondant à l’adresse email."""
     user = session.exec(select(User).where(User.email == payload.email)).first()
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
-
-    if user.account_type != payload.account_type:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Ce compte est un compte {user.account_type.value}, pas {payload.account_type.value}",
-        )
 
     token = create_access_token(user.id, user.account_type)
     return TokenResponse(access_token=token, account_type=user.account_type, user_id=user.id)
@@ -209,8 +204,8 @@ def login(payload: LoginRequest, session: Session = Depends(get_session)):
 @router.post("/google", response_model=TokenResponse)
 def login_with_google(payload: GoogleLoginRequest, session: Session = Depends(get_session)):
     google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip() or DEFAULT_GOOGLE_CLIENT_ID
-    if payload.account_type == AccountType.admin:
-        raise HTTPException(status_code=403, detail="La connexion Google est réservée aux candidats et recruteurs")
+    if payload.create_account and payload.account_type not in (AccountType.candidate, AccountType.recruiter):
+        raise HTTPException(status_code=403, detail="La création Google est réservée aux candidats et recruteurs")
 
     try:
         claims = google_id_token.verify_oauth2_token(
@@ -228,12 +223,16 @@ def login_with_google(payload: GoogleLoginRequest, session: Session = Depends(ge
     normalized_email = email.lower()
     user = session.exec(select(User).where(User.email == normalized_email)).first()
     if user:
-        if user.account_type != payload.account_type:
+        if payload.create_account and payload.account_type != user.account_type:
             raise HTTPException(
                 status_code=403,
                 detail=f"Ce compte est un compte {user.account_type.value}, pas {payload.account_type.value}",
             )
     else:
+        if not payload.create_account:
+            raise HTTPException(status_code=404, detail="Aucun compte associé à cette adresse Google. Inscrivez-vous d’abord.")
+        if payload.account_type not in (AccountType.candidate, AccountType.recruiter):
+            raise HTTPException(status_code=403, detail="La création Google est réservée aux candidats et recruteurs")
         user = User(
             full_name=claims.get("name") or normalized_email.split("@")[0],
             email=normalized_email,

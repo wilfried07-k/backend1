@@ -2,6 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
+from sqlalchemy import Column, LargeBinary
 from sqlmodel import SQLModel, Field
 
 
@@ -261,6 +262,20 @@ class Application(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=datetime.utcnow
     )
+
+
+class ApplicationDocument(SQLModel, table=True):
+    """A private document submitted with a job application."""
+
+    __tablename__ = "application_documents"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    application_id: int = Field(foreign_key="applications.id", index=True)
+    document_type: str = Field(max_length=30)
+    file_name: str = Field(max_length=255)
+    content_type: str = Field(max_length=100)
+    content: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 # ============================================================

@@ -74,7 +74,7 @@ app.include_router(reports.router)
 app.include_router(network.router)
 
 
-@app.on_event("startup")
+@app.on_event("startup") 
 def on_startup():
     """Create SQLModel tables if they do not exist yet."""
     SQLModel.metadata.create_all(engine)

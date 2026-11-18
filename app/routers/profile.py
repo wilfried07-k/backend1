@@ -120,7 +120,8 @@ def get_candidate_profile(candidate_id: int, session: Session = Depends(get_sess
 
         "id": profile.id,
         "full_name": user.full_name if user else None,
-        "email": user.email if user else None,
+        # Email addresses are private; expose them only to the profile owner.
+        "email": user.email if user and user.id == current_user.id else None,
         "job_title": profile.job_title,
         "city": profile.city,
         "summary": profile.summary,

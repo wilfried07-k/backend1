@@ -16,7 +16,7 @@ from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2 import id_token as google_id_token
 from ..database import get_session
 from ..models import User, AccountType, ReferralCode, Referral, CandidateProfile, PasswordResetCode
-from ..auth import hash_password, verify_password, create_access_token, get_current_user
+from ..auth import SECRET_KEY, hash_password, verify_password, create_access_token, get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -99,11 +99,19 @@ def request_password_reset(payload: PasswordResetCodeRequest, session: Session =
         raise HTTPException(status_code=503, detail="La récupération par email n’est pas configurée sur le serveur")
     user = session.exec(select(User).where(User.email == payload.email.lower())).first()
     if user:
+        now = datetime.utcnow()
+        active_code = session.exec(
+            select(PasswordResetCode).where(PasswordResetCode.user_id == user.id)
+        ).first()
+        # Do not let repeated requests invalidate a code the user is already using
+        # or flood their inbox. A fresh code is available after the 15-minute expiry.
+        if active_code and active_code.expires_at > now:
+            return {"message": "Si un compte correspond à cette adresse, un code de réinitialisation a été envoyé."}
         code = f"{secrets.randbelow(1_000_000):06d}"
         reset_code = PasswordResetCode(
             user_id=user.id,
-            code_hash=hashlib.sha256(code.encode()).hexdigest(),
-            expires_at=datetime.utcnow() + timedelta(minutes=15),
+            code_hash=hmac.new(SECRET_KEY.encode(), code.encode(), hashlib.sha256).hexdigest(),
+            expires_at=now + timedelta(minutes=15),
         )
         for previous in session.exec(select(PasswordResetCode).where(PasswordResetCode.user_id == user.id)).all():
             session.delete(previous)
@@ -130,7 +138,7 @@ def reset_password(payload: PasswordResetRequest, session: Session = Depends(get
     if not reset_code or reset_code.expires_at <= datetime.utcnow() or reset_code.attempts >= 5:
         raise HTTPException(status_code=400, detail="Code invalide ou expiré")
 
-    code_hash = hashlib.sha256(payload.code.encode()).hexdigest()
+    code_hash = hmac.new(SECRET_KEY.encode(), payload.code.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(reset_code.code_hash, code_hash):
         reset_code.attempts += 1
         session.add(reset_code)
@@ -186,7 +194,7 @@ def register(payload: RegisterRequest, session: Session = Depends(get_session)):
     session.commit()
     session.refresh(user)
 
-    token = create_access_token(user.id, user.account_type)
+    token = create_access_token(user.id, user.account_type, user.hashed_password)
     return TokenResponse(access_token=token, account_type=user.account_type, user_id=user.id)
 
 
@@ -197,7 +205,7 @@ def login(payload: LoginRequest, session: Session = Depends(get_session)):
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
 
-    token = create_access_token(user.id, user.account_type)
+    token = create_access_token(user.id, user.account_type, user.hashed_password)
     return TokenResponse(access_token=token, account_type=user.account_type, user_id=user.id)
 
 
@@ -246,7 +254,7 @@ def login_with_google(payload: GoogleLoginRequest, session: Session = Depends(ge
         session.commit()
         session.refresh(user)
 
-    token = create_access_token(user.id, user.account_type)
+    token = create_access_token(user.id, user.account_type, user.hashed_password)
     return TokenResponse(access_token=token, account_type=user.account_type, user_id=user.id)
 
 

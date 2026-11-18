@@ -1,6 +1,6 @@
 from io import BytesIO
 from pathlib import PurePath
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import quote
 from zipfile import ZipFile, is_zipfile
 
@@ -22,7 +22,7 @@ DOCUMENT_CONTENT_TYPES = {
 
 
 class ApplicationStatusUpdate(BaseModel):
-    status: str   # Envoyée / En examen / Entretien / Refusée / Acceptée
+    status: Literal["Envoyée", "En examen", "Entretien", "Refusée", "Acceptée"]
 
 
 class CompanyApplicationSummary(BaseModel):

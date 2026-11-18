@@ -1,15 +1,16 @@
 ﻿import os
 from datetime import datetime, timedelta
+import hmac
 from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from .database import get_session
-from .models import AccountType, User
+from .models import AccountType, BannedAccount, User
 
 APP_ENV = os.getenv("APP_ENV", "development").lower()
 SECRET_KEY = os.getenv("SECRET_KEY", "development-only-insecure-change-before-deploy")
@@ -29,10 +30,19 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
-def create_access_token(user_id: int, account_type: AccountType) -> str:
+def _password_version(hashed_password: str) -> str:
+    return hmac.digest(SECRET_KEY.encode(), hashed_password.encode(), "sha256").hex()
+
+
+def create_access_token(user_id: int, account_type: AccountType, hashed_password: str) -> str:
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode(
-        {"sub": str(user_id), "account_type": account_type.value, "exp": expire},
+        {
+            "sub": str(user_id),
+            "account_type": account_type.value,
+            "pwd": _password_version(hashed_password),
+            "exp": expire,
+        },
         SECRET_KEY,
         algorithm=ALGORITHM,
     )
@@ -59,6 +69,19 @@ def get_current_user(
     user = session.get(User, user_id_int)
     if user is None:
         raise credentials_error
+    token_password_version = payload.get("pwd")
+    if not isinstance(token_password_version, str) or not hmac.compare_digest(
+        token_password_version, _password_version(user.hashed_password)
+    ):
+        raise credentials_error
+    active_ban = session.exec(
+        select(BannedAccount).where(
+            BannedAccount.user_id == user.id,
+            BannedAccount.active == True,
+        )
+    ).first()
+    if active_ban:
+        raise HTTPException(status_code=403, detail="Ce compte est suspendu")
     return user
 
 

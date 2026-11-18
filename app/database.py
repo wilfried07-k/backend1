@@ -35,6 +35,8 @@ engine = create_engine(
     connect_args=connect_args,
 )
 
+"""def get_setup_engine():
+    return engine"""
 
 def get_session():
     """Provide a SQLModel session for a request and close it afterward."""

@@ -58,6 +58,7 @@ def list_candidate_interviews(candidate_id: int, session: Session = Depends(get_
         results.append({
             "interview_id": interview.id,
             "application_id": application.id if application else None,
+            "candidate_id": candidate.id if candidate else None,
             "job_title": job.title if job else None,
             "company_name": company.name if company else None,
             "scheduled_at": interview.scheduled_at.isoformat(),
@@ -95,6 +96,7 @@ def list_company_interviews(company_id: int, session: Session = Depends(get_sess
         results.append({
             "interview_id": interview.id,
             "application_id": application.id if application else None,
+            "candidate_id": candidate.id if candidate else None,
             "job_title": job.title if job else None,
             "company_name": company.name if company else None,
             "candidate_name": user.full_name if user else None,

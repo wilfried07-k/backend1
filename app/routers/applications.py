@@ -41,6 +41,8 @@ class ApplicationReview(BaseModel):
     motivation_message: Optional[str]
     cv_file_name: Optional[str]
     motivation_letter_file_name: Optional[str]
+    candidate_email: Optional[str] = None
+    candidate_phone: Optional[str] = None
 
 
 async def read_application_document(upload: UploadFile) -> tuple[str, str, bytes]:
@@ -199,12 +201,16 @@ def get_application_review(
         select(ApplicationDocument).where(ApplicationDocument.application_id == application_id)
     ).all()
     document_names = {document.document_type: document.file_name for document in documents}
+    candidate = session.get(CandidateProfile, application.candidate_id)
+    candidate_user = session.get(User, candidate.user_id) if candidate else None
     return ApplicationReview(
         application_id=application.id,
         status=application.status,
         motivation_message=application.motivation_message,
         cv_file_name=document_names.get("cv"),
         motivation_letter_file_name=document_names.get("motivation_letter"),
+        candidate_email=candidate_user.email if candidate_user else None,
+        candidate_phone=candidate_user.phone if candidate_user else None,
     )
 
 
